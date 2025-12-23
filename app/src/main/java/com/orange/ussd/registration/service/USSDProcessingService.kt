@@ -136,8 +136,8 @@ class USSDProcessingService : Service() {
                 
                 updateNotification("Processing: ${record.phoneNumber}")
                 
-                // Wait longer before executing USSD to ensure previous call is fully closed
-                delay(2000)
+                // Execute USSD code immediately
+                delay(500)
                 
                 // Execute USSD code
                 val ussdCode = buildUSSDCode(record.phoneNumber, record.pukLastFour)
@@ -163,9 +163,9 @@ class USSDProcessingService : Service() {
                 expectedFullName = null
                 expectedCNE = null
 
-                // Wait 5 seconds before processing next record to ensure USSD dialog is fully closed
+                // Wait 2 seconds before processing next record to ensure USSD dialog is fully closed
                 // This ensures complete execution: executing - input name - send - input CIN - send - response
-                delay(5000)
+                delay(2000)
 
             } catch (e: Exception) {
                 updateNotification("Error: ${e.message}")
@@ -173,8 +173,8 @@ class USSDProcessingService : Service() {
                 currentRecordId = null
                 expectedFullName = null
                 expectedCNE = null
-                // Wait longer on error to ensure system recovers
-                delay(5000)
+                // Wait briefly on error to ensure system recovers
+                delay(2000)
             } finally {
                 // Always release the processing lock
                 isCurrentlyProcessing = false
@@ -197,8 +197,8 @@ class USSDProcessingService : Service() {
                 record?.status == RegistrationStatus.ALREADY_REGISTERED ||
                 record?.status == RegistrationStatus.FAILED ||
                 record?.status == RegistrationStatus.CANCELLED) {
-                // Wait longer to ensure USSD dialog is fully closed and response is received
-                delay(3000)
+                // Wait briefly to ensure USSD dialog is fully closed and response is received
+                delay(1000)
                 return
             }
             

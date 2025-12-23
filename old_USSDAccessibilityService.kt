@@ -2,12 +2,6 @@ package com.orange.ussd.registration.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.accessibilityservice.GestureDescription
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.graphics.Path
-import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -34,14 +28,9 @@ class USSDAccessibilityService : AccessibilityService() {
     private var lastActionTime = 0L
     private var lastDialogText = ""
     private var retryCount = 0
-    private val MAX_RETRY = 5  // Increased retry count
-    private val ACTION_DELAY = 400L // Faster response
+    private val MAX_RETRY = 3
+    private val ACTION_DELAY = 600L // Reduced delay for faster response
     private val TAG = "USSDAccessibility"
-    
-    // Track input fill attempts to prevent infinite loops
-    private var nameInputAttempts = 0
-    private var cneInputAttempts = 0
-    private val MAX_INPUT_ATTEMPTS = 5
 
     // List of USSD dialog package names
     private val USSD_PACKAGES = listOf(
@@ -84,14 +73,9 @@ class USSDAccessibilityService : AccessibilityService() {
         // IMPORTANT: Only process events from USSD dialog packages
         val packageName = event.packageName?.toString() ?: return
         if (!isUSSDPackage(packageName)) {
-            // Log less frequently to reduce noise
-            if (System.currentTimeMillis() - lastActionTime > 5000) {
-                Log.d(TAG, "Ignoring event from non-USSD package: $packageName")
-            }
+            Log.d(TAG, "Ignoring event from non-USSD package: $packageName")
             return
         }
-        
-        Log.d(TAG, "Processing event from USSD package: $packageName")
         
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
@@ -102,17 +86,11 @@ class USSDAccessibilityService : AccessibilityService() {
     }
     
     private fun isUSSDPackage(packageName: String): Boolean {
-        // Be more permissive - check for USSD related packages
-        val pkgLower = packageName.lowercase()
-        return USSD_PACKAGES.any { pkgLower.contains(it) || it.contains(pkgLower) } ||
-               pkgLower.contains("phone") ||
-               pkgLower.contains("telecom") ||
-               pkgLower.contains("ussd") ||
-               pkgLower.contains("stk") ||
-               pkgLower.contains("android") || // Many USSD dialogs use android.* packages
-               pkgLower.contains("dialer") ||
-               pkgLower.contains("call") ||
-               pkgLower.contains("sim")
+        return USSD_PACKAGES.any { packageName.contains(it) || it.contains(packageName) } ||
+               packageName.contains("phone") ||
+               packageName.contains("telecom") ||
+               packageName.contains("ussd") ||
+               packageName.contains("stk")
     }
 
     private fun handleUSSDDialog(
@@ -169,80 +147,82 @@ class USSDAccessibilityService : AccessibilityService() {
             
             Log.d(TAG, "USSD Dialog detected: $dialogText")
             Log.d(TAG, "State: hasFilledName=$hasFilledName, hasFilledCNE=$hasFilledCNE, hasDismissedFinal=$hasDismissedFinalDialog")
-            Log.d(TAG, "Input attempts - name: $nameInputAttempts, cne: $cneInputAttempts")
             
             // Check if asking for name - ONLY if we haven't filled it yet
             if (!hasFilledName && isNamePrompt(dialogText)) {
                 Log.d(TAG, "Detected name input prompt")
                 isWaitingForName = true
                 retryCount++
-                nameInputAttempts++
                 
-                // Prevent infinite loops
-                if (nameInputAttempts > MAX_INPUT_ATTEMPTS) {
-                    Log.e(TAG, "Too many name input attempts, marking as failed and moving on")
-                    hasFilledName = true  // Skip this step
-                    lastActionTime = System.currentTimeMillis()
-                    return
-                }
-                
-                // Fill name using async approach to prevent blocking
-                serviceScope.launch {
+                handler.postDelayed({
                     try {
-                        delay(300) // Small delay for dialog to stabilize
+                        val rootForFill = rootInActiveWindow ?: return@postDelayed
                         
-                        withContext(Dispatchers.Main) {
-                            try {
-                                val rootForFill = rootInActiveWindow
-                                if (rootForFill == null) {
-                                    Log.e(TAG, "Root node null when trying to fill name")
-                                    return@withContext
+                        // Verify we're still in USSD dialog
+                        val pkg = rootForFill.packageName?.toString() ?: ""
+                        if (!isUSSDPackage(pkg)) {
+                            Log.d(TAG, "Not in USSD dialog anymore, skipping name fill")
+                            try { rootForFill.recycle() } catch (e: Exception) {}
+                            return@postDelayed
+                        }
+                        
+                        val filled = fillInputField(rootForFill, expectedName)
+
+                        if (filled) {
+                            serviceScope.launch {
+                                try {
+                                    database.registrationDao().updateStatus(recordId, RegistrationStatus.NAME_FILLED)
+                                    database.registrationDao().updateNameFilled(recordId, true)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "DB error: ${e.message}")
                                 }
-                                
-                                // Verify we're still in USSD dialog
-                                val pkg = rootForFill.packageName?.toString() ?: ""
-                                if (!isUSSDPackage(pkg)) {
-                                    Log.d(TAG, "Not in USSD dialog anymore, skipping name fill")
-                                    try { rootForFill.recycle() } catch (e: Exception) {}
-                                    return@withContext
-                                }
-                                
-                                Log.d(TAG, "Filling name field with: $expectedName")
-                                val filled = fillInputField(rootForFill, expectedName)
-                                
-                                if (filled) {
-                                    hasFilledName = true
-                                    isWaitingForName = false
-                                    lastActionTime = System.currentTimeMillis()
-                                    Log.d(TAG, "Name filled: $expectedName")
+                            }
+
+                            hasFilledName = true
+                            isWaitingForName = false
+                            lastActionTime = System.currentTimeMillis()
+                            Log.d(TAG, "Name filled successfully: $expectedName")
+
+                            // Wait then click Envoyer/OK button
+                            handler.postDelayed({
+                                try {
+                                    val rootForClick = rootInActiveWindow ?: return@postDelayed
                                     
-                                    // Update database async
-                                    launch(Dispatchers.IO) {
-                                        try {
-                                            database.registrationDao().updateStatus(recordId, RegistrationStatus.NAME_FILLED)
-                                            database.registrationDao().updateNameFilled(recordId, true)
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "DB error: ${e.message}")
-                                        }
+                                    // Verify we're still in USSD dialog
+                                    val clickPkg = rootForClick.packageName?.toString() ?: ""
+                                    if (!isUSSDPackage(clickPkg)) {
+                                        Log.d(TAG, "Not in USSD dialog anymore, skipping button click")
+                                        try { rootForClick.recycle() } catch (e: Exception) {}
+                                        return@postDelayed
                                     }
                                     
-                                    // Click Send/OK button after a brief delay
-                                    handler.postDelayed({
-                                        clickSendButtonSafely()
-                                    }, 500)
-                                } else {
-                                    Log.e(TAG, "Failed to fill name field")
+                                    // Try clicking the positive button
+                                    var okClicked = clickUSSDPositiveButton(rootForClick)
+                                    
+                                    if (!okClicked) {
+                                        // Fallback to text-based button search
+                                        okClicked = clickButton(rootForClick, listOf("envoyer", "ok", "send", "valider"))
+                                    }
+                                    
+                                    if (okClicked) {
+                                        lastActionTime = System.currentTimeMillis()
+                                        Log.d(TAG, "Successfully clicked Envoyer button for name")
+                                    } else {
+                                        Log.e(TAG, "Could not find Envoyer button for name")
+                                    }
+                                    try { rootForClick.recycle() } catch (e: Exception) {}
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error clicking button: ${e.message}")
                                 }
-                                
-                                try { rootForFill.recycle() } catch (e: Exception) {}
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error in name fill: ${e.message}")
-                            }
+                            }, 600)
+                        } else {
+                            Log.e(TAG, "Failed to fill name input field")
                         }
+                        try { rootForFill.recycle() } catch (e: Exception) {}
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error filling name async: ${e.message}")
+                        Log.e(TAG, "Error filling name: ${e.message}")
                     }
-                }
+                }, 400)
             }
             
             // Check if asking for CNE - IMPROVED detection after name is filled
@@ -250,50 +230,38 @@ class USSDAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "Detected CNE input prompt")
                 isWaitingForCNE = true
                 retryCount++
-                cneInputAttempts++
                 
-                // Prevent infinite loops
-                if (cneInputAttempts > MAX_INPUT_ATTEMPTS) {
-                    Log.e(TAG, "Too many CNE input attempts, marking as failed and moving on")
-                    hasFilledCNE = true  // Skip this step
-                    lastActionTime = System.currentTimeMillis()
-                    return
-                }
-                
-                // Fill CNE using async approach
-                serviceScope.launch {
+                handler.postDelayed({
                     try {
-                        delay(300)
+                        val rootForFill = rootInActiveWindow ?: return@postDelayed
                         
-                        withContext(Dispatchers.Main) {
+                        // Verify we're still in USSD dialog
+                        val pkg = rootForFill.packageName?.toString() ?: ""
+                        if (!isUSSDPackage(pkg)) {
+                            Log.d(TAG, "Not in USSD dialog anymore, skipping CNE fill")
+                            try { rootForFill.recycle() } catch (e: Exception) {}
+                            return@postDelayed
+                        }
+                        
+                        // First, focus on the input field by clicking on it
+                        focusInputField(rootForFill)
+                        
+                        handler.postDelayed({
                             try {
-                                val rootForFill = rootInActiveWindow
-                                if (rootForFill == null) {
-                                    Log.e(TAG, "Root node null when trying to fill CNE")
-                                    return@withContext
+                                val rootForFill2 = rootInActiveWindow ?: return@postDelayed
+                                
+                                // Verify again we're still in USSD dialog
+                                val pkg2 = rootForFill2.packageName?.toString() ?: ""
+                                if (!isUSSDPackage(pkg2)) {
+                                    Log.d(TAG, "Not in USSD dialog anymore, skipping CNE input")
+                                    try { rootForFill2.recycle() } catch (e: Exception) {}
+                                    return@postDelayed
                                 }
                                 
-                                val pkg = rootForFill.packageName?.toString() ?: ""
-                                if (!isUSSDPackage(pkg)) {
-                                    Log.d(TAG, "Not in USSD dialog anymore, skipping CNE fill")
-                                    try { rootForFill.recycle() } catch (e: Exception) {}
-                                    return@withContext
-                                }
-                                
-                                // Focus and fill
-                                focusInputField(rootForFill)
-                                
-                                Log.d(TAG, "Filling CNE field with: $expectedCNE")
-                                val filled = fillInputField(rootForFill, expectedCNE)
-                                
+                                val filled = fillInputField(rootForFill2, expectedCNE)
+
                                 if (filled) {
-                                    hasFilledCNE = true
-                                    isWaitingForCNE = false
-                                    lastActionTime = System.currentTimeMillis()
-                                    Log.d(TAG, "CNE filled: $expectedCNE")
-                                    
-                                    // Update database async
-                                    launch(Dispatchers.IO) {
+                                    serviceScope.launch {
                                         try {
                                             database.registrationDao().updateStatus(recordId, RegistrationStatus.CNE_FILLED)
                                             database.registrationDao().updateCneFilled(recordId, true)
@@ -301,82 +269,140 @@ class USSDAccessibilityService : AccessibilityService() {
                                             Log.e(TAG, "DB error: ${e.message}")
                                         }
                                     }
-                                    
-                                    // Click Send/OK button
+
+                                    hasFilledCNE = true
+                                    isWaitingForCNE = false
+                                    lastActionTime = System.currentTimeMillis()
+                                    Log.d(TAG, "CNE filled successfully: $expectedCNE")
+
+                                    // Wait then click Envoyer/OK button
                                     handler.postDelayed({
-                                        clickSendButtonSafely()
-                                    }, 500)
+                                        try {
+                                            val rootForClick = rootInActiveWindow ?: return@postDelayed
+                                            
+                                            // Verify we're still in USSD dialog
+                                            val clickPkg = rootForClick.packageName?.toString() ?: ""
+                                            if (!isUSSDPackage(clickPkg)) {
+                                                Log.d(TAG, "Not in USSD dialog anymore, skipping button click")
+                                                try { rootForClick.recycle() } catch (e: Exception) {}
+                                                return@postDelayed
+                                            }
+                                            
+                                            // Try clicking the positive button
+                                            var okClicked = clickUSSDPositiveButton(rootForClick)
+                                            
+                                            if (!okClicked) {
+                                                okClicked = clickButton(rootForClick, listOf("envoyer", "ok", "send", "valider"))
+                                            }
+                                            
+                                            if (okClicked) {
+                                                lastActionTime = System.currentTimeMillis()
+                                                Log.d(TAG, "Successfully clicked Envoyer button for CNE")
+                                            } else {
+                                                Log.e(TAG, "Could not find Envoyer button for CNE")
+                                            }
+                                            try { rootForClick.recycle() } catch (e: Exception) {}
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Error clicking button: ${e.message}")
+                                        }
+                                    }, 600)
                                 } else {
-                                    Log.e(TAG, "Failed to fill CNE field")
+                                    Log.e(TAG, "Failed to fill CNE input field")
                                 }
-                                
-                                try { rootForFill.recycle() } catch (e: Exception) {}
+                                try { rootForFill2.recycle() } catch (e: Exception) {}
                             } catch (e: Exception) {
-                                Log.e(TAG, "Error in CNE fill: ${e.message}")
+                                Log.e(TAG, "Error filling CNE: ${e.message}")
                             }
-                        }
+                        }, 300)
+                        
+                        try { rootForFill.recycle() } catch (e: Exception) {}
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error filling CNE async: ${e.message}")
+                        Log.e(TAG, "Error in CNE flow: ${e.message}")
                     }
-                }
+                }, 400)
             }
             
-            // Fallback: Check if there's an input field visible after name is filled
+            // Check if there's an input field visible but we haven't detected the prompt type
+            // This handles cases where the label text doesn't match our patterns
             else if (hasFilledName && !hasFilledCNE && hasInputField(rootNode) && !isNamePrompt(dialogText)) {
-                Log.d(TAG, "Found input field after name - assuming CNE prompt (fallback)")
+                Log.d(TAG, "Found input field after name - assuming CNE prompt")
                 isWaitingForCNE = true
                 retryCount++
-                cneInputAttempts++
                 
-                if (cneInputAttempts > MAX_INPUT_ATTEMPTS) {
-                    Log.e(TAG, "Too many CNE fallback attempts, moving on")
-                    hasFilledCNE = true
-                    lastActionTime = System.currentTimeMillis()
-                    return
-                }
-                
-                serviceScope.launch {
+                handler.postDelayed({
                     try {
-                        delay(300)
+                        val rootForFill = rootInActiveWindow ?: return@postDelayed
                         
-                        withContext(Dispatchers.Main) {
+                        // Verify we're still in USSD dialog
+                        val pkg = rootForFill.packageName?.toString() ?: ""
+                        if (!isUSSDPackage(pkg)) {
+                            Log.d(TAG, "Not in USSD dialog anymore, skipping fallback CNE")
+                            try { rootForFill.recycle() } catch (e: Exception) {}
+                            return@postDelayed
+                        }
+                        
+                        // First, focus on the input field by clicking on it
+                        focusInputField(rootForFill)
+                        
+                        handler.postDelayed({
                             try {
-                                val rootForFill = rootInActiveWindow ?: return@withContext
+                                val rootForFill2 = rootInActiveWindow ?: return@postDelayed
                                 
-                                val pkg = rootForFill.packageName?.toString() ?: ""
-                                if (!isUSSDPackage(pkg)) {
-                                    try { rootForFill.recycle() } catch (e: Exception) {}
-                                    return@withContext
+                                val pkg2 = rootForFill2.packageName?.toString() ?: ""
+                                if (!isUSSDPackage(pkg2)) {
+                                    try { rootForFill2.recycle() } catch (e: Exception) {}
+                                    return@postDelayed
                                 }
                                 
-                                focusInputField(rootForFill)
-                                val filled = fillInputField(rootForFill, expectedCNE)
-                                
+                                val filled = fillInputField(rootForFill2, expectedCNE)
+
                                 if (filled) {
+                                    serviceScope.launch {
+                                        try {
+                                            database.registrationDao().updateStatus(recordId, RegistrationStatus.CNE_FILLED)
+                                            database.registrationDao().updateCneFilled(recordId, true)
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "DB error: ${e.message}")
+                                        }
+                                    }
+
                                     hasFilledCNE = true
                                     isWaitingForCNE = false
                                     lastActionTime = System.currentTimeMillis()
                                     Log.d(TAG, "CNE filled (fallback): $expectedCNE")
-                                    
-                                    launch(Dispatchers.IO) {
-                                        try {
-                                            database.registrationDao().updateStatus(recordId, RegistrationStatus.CNE_FILLED)
-                                            database.registrationDao().updateCneFilled(recordId, true)
-                                        } catch (e: Exception) {}
-                                    }
-                                    
+
                                     handler.postDelayed({
-                                        clickSendButtonSafely()
-                                    }, 500)
+                                        try {
+                                            val rootForClick = rootInActiveWindow ?: return@postDelayed
+                                            
+                                            val clickPkg = rootForClick.packageName?.toString() ?: ""
+                                            if (!isUSSDPackage(clickPkg)) {
+                                                try { rootForClick.recycle() } catch (e: Exception) {}
+                                                return@postDelayed
+                                            }
+                                            
+                                            var okClicked = clickUSSDPositiveButton(rootForClick)
+                                            if (!okClicked) {
+                                                okClicked = clickButton(rootForClick, listOf("envoyer", "ok", "send", "valider"))
+                                            }
+                                            lastActionTime = System.currentTimeMillis()
+                                            try { rootForClick.recycle() } catch (e: Exception) {}
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Error clicking button: ${e.message}")
+                                        }
+                                    }, 600)
                                 }
-                                
-                                try { rootForFill.recycle() } catch (e: Exception) {}
+                                try { rootForFill2.recycle() } catch (e: Exception) {}
                             } catch (e: Exception) {
-                                Log.e(TAG, "Error in fallback CNE: ${e.message}")
+                                Log.e(TAG, "Error in CNE fallback fill: ${e.message}")
                             }
-                        }
-                    } catch (e: Exception) {}
-                }
+                        }, 300)
+                        
+                        try { rootForFill.recycle() } catch (e: Exception) {}
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in CNE fallback: ${e.message}")
+                    }
+                }, 400)
             }
             
             // Check for already registered message
@@ -414,7 +440,7 @@ class USSDAccessibilityService : AccessibilityService() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error dismissing dialog: ${e.message}")
                     }
-                }, 250)
+                }, 500)
             }
             
             // Check for completion/success messages - IMPROVED to handle final OK
@@ -460,12 +486,12 @@ class USSDAccessibilityService : AccessibilityService() {
                             // Reset state after dismissing
                             handler.postDelayed({
                                 resetState()
-                            }, 200)
+                            }, 500)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error dismissing final dialog: ${e.message}")
                             resetState()
                         }
-                    }, 250)
+                    }, 500)
                 }
             }
             
@@ -496,7 +522,7 @@ class USSDAccessibilityService : AccessibilityService() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error dismissing validation dialog: ${e.message}")
                     }
-                }, 150)
+                }, 300)
             }
             
             // Check for error messages
@@ -527,7 +553,7 @@ class USSDAccessibilityService : AccessibilityService() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error dismissing error dialog: ${e.message}")
                     }
-                }, 250)
+                }, 500)
             }
             
         } catch (e: Exception) {
@@ -684,123 +710,52 @@ class USSDAccessibilityService : AccessibilityService() {
             // Try to find EditText or input field
             if (node.isEditable || node.className?.contains("EditText") == true || node.className?.contains("edit") == true) {
                 try {
-                    Log.d(TAG, "Found input field, attempting to fill with: $text")
-                    Log.d(TAG, "Android SDK: ${Build.VERSION.SDK_INT}, className: ${node.className}")
-                    
-                    // METHOD 1: Direct ACTION_SET_TEXT (most reliable on Android 5+)
-                    val arguments = Bundle().apply {
-                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                    // IMPROVED TOUCH EXECUTION - Multiple attempts
+                    Log.d(TAG, "Attempting touch execution for input field")
+                    var touchSuccess = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    Thread.sleep(250)
+                    if (!touchSuccess) {
+                        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                        Thread.sleep(150)
+                        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        Thread.sleep(250)
                     }
                     
-                    // Focus first
+                    // Then focus the field
                     node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                    Thread.sleep(150)
                     
-                    // Try set text directly
-                    var success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                    
-                    if (success) {
-                        Log.d(TAG, "ACTION_SET_TEXT succeeded for: $text")
-                        return true
-                    }
-                    
-                    Log.d(TAG, "Direct ACTION_SET_TEXT failed, trying click+focus+setText...")
-                    
-                    // METHOD 2: Click to activate, focus, then set text
-                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-                    
-                    success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                    if (success) {
-                        Log.d(TAG, "ACTION_SET_TEXT succeeded after click+focus")
-                        return true
-                    }
-                    
-                    // METHOD 3: Clear text first, then set (Android 10+)
-                    Log.d(TAG, "Trying clear then set method...")
-                    val clearArgs = Bundle().apply {
-                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
-                    }
+                    // Clear existing text
+                    val clearArgs = Bundle()
+                    clearArgs.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
                     node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, clearArgs)
                     
-                    success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                    Thread.sleep(100)
+                    
+                    // Set new text
+                    val arguments = Bundle()
+                    arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                    val success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                    
                     if (success) {
-                        Log.d(TAG, "ACTION_SET_TEXT succeeded after clear")
+                        Log.d(TAG, "Successfully filled input field with: $text")
+                        // Wait a bit for the text to be registered
+                        Thread.sleep(300)
+                        return true
+                    } else {
+                        // Try alternative method - paste from clipboard
+                        Log.d(TAG, "SET_TEXT failed, trying alternative method")
+                        // Just try setting text again
+                        Thread.sleep(200)
+                        node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
                         return true
                     }
-                    
-                    // METHOD 4: Use clipboard paste
-                    Log.d(TAG, "Trying clipboard paste method...")
-                    try {
-                        val clipboard = applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                        if (clipboard != null) {
-                            val clip = ClipData.newPlainText("ussd_input", text)
-                            clipboard.setPrimaryClip(clip)
-                            
-                            // Select all and paste
-                            val selectArgs = Bundle().apply {
-                                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
-                                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 99999)
-                            }
-                            node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectArgs)
-                            
-                            val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-                            if (pasted) {
-                                Log.d(TAG, "Clipboard paste succeeded")
-                                return true
-                            }
-                        }
-                    } catch (clipError: Exception) {
-                        Log.e(TAG, "Clipboard failed: ${clipError.message}")
-                    }
-                    
-                    // METHOD 5: Use gesture tap for Android 7+
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                        Log.d(TAG, "Trying gesture tap method...")
-                        try {
-                            val bounds = Rect()
-                            node.getBoundsInScreen(bounds)
-                            val cx = bounds.centerX().toFloat()
-                            val cy = bounds.centerY().toFloat()
-                            
-                            if (cx > 0 && cy > 0) {
-                                val path = Path()
-                                path.moveTo(cx, cy)
-                                
-                                val gesture = GestureDescription.Builder()
-                                    .addStroke(GestureDescription.StrokeDescription(path, 0, 50))
-                                    .build()
-                                
-                                dispatchGesture(gesture, object : GestureResultCallback() {
-                                    override fun onCompleted(gestureDescription: GestureDescription?) {
-                                        Log.d(TAG, "Gesture tap completed, setting text...")
-                                        handler.postDelayed({
-                                            try {
-                                                rootInActiveWindow?.let { root ->
-                                                    setTextToEditableField(root, text)
-                                                    try { root.recycle() } catch (e: Exception) {}
-                                                }
-                                            } catch (e: Exception) {}
-                                        }, 150)
-                                    }
-                                }, null)
-                            }
-                        } catch (gestureError: Exception) {
-                            Log.e(TAG, "Gesture failed: ${gestureError.message}")
-                        }
-                    }
-                    
-                    // Assume success to prevent blocking - text might have been set
-                    Log.w(TAG, "All methods attempted, continuing...")
-                    return true
-                    
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error filling input: ${e.message}")
-                    e.printStackTrace()
-                    return true // Return true to prevent blocking
+                    Log.e(TAG, "Error filling input field: ${e.message}")
                 }
             }
             
-            // Search children recursively
+            // Search children
             for (i in 0 until node.childCount) {
                 try {
                     node.getChild(i)?.let { child ->
@@ -811,38 +766,13 @@ class USSDAccessibilityService : AccessibilityService() {
                         try { child.recycle() } catch (e: Exception) {}
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Error searching child: ${e.message}")
+                    Log.w(TAG, "Error searching child for input: ${e.message}")
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in fillInputField: ${e.message}")
         }
         
-        return false
-    }
-    
-    /**
-     * Helper function to set text in editable field
-     */
-    private fun setTextToEditableField(node: AccessibilityNodeInfo, text: String): Boolean {
-        try {
-            if (node.isEditable || node.className?.contains("EditText") == true) {
-                val args = Bundle().apply {
-                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-                }
-                return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            }
-            
-            for (i in 0 until node.childCount) {
-                node.getChild(i)?.let { child ->
-                    if (setTextToEditableField(child, text)) {
-                        try { child.recycle() } catch (e: Exception) {}
-                        return true
-                    }
-                    try { child.recycle() } catch (e: Exception) {}
-                }
-            }
-        } catch (e: Exception) {}
         return false
     }
 
@@ -869,7 +799,7 @@ class USSDAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "Clicking USSD button: '$nodeText' (desc: '$nodeDesc', id: '$viewId')")
                 val success = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 if (success) {
-                    Thread.sleep(100)
+                    Thread.sleep(300)
                     return true
                 }
             }
@@ -918,7 +848,7 @@ class USSDAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "Found USSD positive button: '$nodeText' (id: '$viewId')")
                 val success = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 if (success) {
-                    Thread.sleep(100)
+                    Thread.sleep(300)
                     return true
                 }
             }
@@ -999,10 +929,10 @@ class USSDAccessibilityService : AccessibilityService() {
                 node.className?.contains("edit") == true) {
                 // Click to focus
                 node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                Thread.sleep(50)
+                Thread.sleep(100)
                 // Then focus
                 node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-                Thread.sleep(50)
+                Thread.sleep(100)
                 Log.d(TAG, "Focused input field")
                 return true
             }
@@ -1028,41 +958,6 @@ class USSDAccessibilityService : AccessibilityService() {
     private fun delay(millis: Long) {
         Thread.sleep(millis)
     }
-    
-    /**
-     * Safely click the Send/OK button in USSD dialog
-     * Used after filling input fields
-     */
-    private fun clickSendButtonSafely() {
-        try {
-            val root = rootInActiveWindow ?: return
-            
-            val pkg = root.packageName?.toString() ?: ""
-            if (!isUSSDPackage(pkg)) {
-                Log.d(TAG, "Not in USSD dialog, skipping button click")
-                try { root.recycle() } catch (e: Exception) {}
-                return
-            }
-            
-            Log.d(TAG, "Looking for Send/OK button...")
-            var clicked = clickUSSDPositiveButton(root)
-            
-            if (!clicked) {
-                clicked = clickButton(root, listOf("envoyer", "ok", "send", "valider", "submit", "oui", "yes"))
-            }
-            
-            if (clicked) {
-                lastActionTime = System.currentTimeMillis()
-                Log.d(TAG, "Send button clicked successfully")
-            } else {
-                Log.w(TAG, "Could not find Send button")
-            }
-            
-            try { root.recycle() } catch (e: Exception) {}
-        } catch (e: Exception) {
-            Log.e(TAG, "Error clicking send button: ${e.message}")
-        }
-    }
 
     private fun resetState() {
         isWaitingForName = false
@@ -1074,8 +969,6 @@ class USSDAccessibilityService : AccessibilityService() {
         lastActionTime = 0L
         lastDialogText = ""
         retryCount = 0
-        nameInputAttempts = 0
-        cneInputAttempts = 0
         Log.d(TAG, "State reset complete")
     }
 
