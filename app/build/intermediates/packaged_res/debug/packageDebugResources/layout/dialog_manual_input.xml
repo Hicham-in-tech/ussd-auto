@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Phone Number"
+        android:textStyle="bold"
+        android:textSize="14sp"/>
+
+    <EditText
+        android:id="@+id/etPhoneNumber"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="0622777777"
+        android:inputType="phone"
+        android:maxLength="10"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="PUK Last 4 Digits"
+        android:textStyle="bold"
+        android:textSize="14sp"/>
+
+    <EditText
+        android:id="@+id/etPukLastFour"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="1234"
+        android:inputType="number"
+        android:maxLength="4"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Full Name"
+        android:textStyle="bold"
+        android:textSize="14sp"/>
+
+    <EditText
+        android:id="@+id/etFullName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="AHMED EL ALAMI"
+        android:inputType="textCapCharacters"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="CNE (National ID)"
+        android:textStyle="bold"
+        android:textSize="14sp"/>
+
+    <EditText
+        android:id="@+id/etCNE"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="JC123456"
+        android:inputType="textCapCharacters"
+        android:layout_marginBottom="8dp"/>
+
+</LinearLayout>

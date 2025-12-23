@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="blue_dark">#1976D2</color>
+    <color name="blue_light">#BBDEFB</color>
+    <color name="blue_primary">#2196F3</color>
+    <color name="ic_launcher_background">#FF6200</color>
+    <color name="white">#FFFFFFFF</color>
+    <string name="accessibility_service_description">This service allows the app to automatically fill in Full Name and CNE fields during USSD registration process.</string>
+    <string name="app_name">H.bdh UssD</string>
+    <style name="Theme.USSDRegistration" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="colorPrimary">@color/blue_primary</item>
+        <item name="colorPrimaryVariant">@color/blue_dark</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/blue_light</item>
+        <item name="colorSecondaryVariant">@color/blue_dark</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+    </style>
+</resources>
