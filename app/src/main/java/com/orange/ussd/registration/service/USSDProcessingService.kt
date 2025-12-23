@@ -111,7 +111,7 @@ class USSDProcessingService : Service() {
             // Ensure only one record is processed at a time using Mutex
             processingMutex.withLock {
                 if (isCurrentlyProcessing) {
-                    delay(1000)
+                    delay(200)
                     return@withLock
                 }
                 isCurrentlyProcessing = true
@@ -137,7 +137,7 @@ class USSDProcessingService : Service() {
                 updateNotification("Processing: ${record.phoneNumber}")
                 
                 // Execute USSD code immediately
-                delay(500)
+                delay(100)
                 
                 // Execute USSD code
                 val ussdCode = buildUSSDCode(record.phoneNumber, record.pukLastFour)
@@ -163,9 +163,9 @@ class USSDProcessingService : Service() {
                 expectedFullName = null
                 expectedCNE = null
 
-                // Wait 2 seconds before processing next record to ensure USSD dialog is fully closed
+                // Wait before processing next record to ensure USSD dialog is fully closed
                 // This ensures complete execution: executing - input name - send - input CIN - send - response
-                delay(2000)
+                delay(500)
 
             } catch (e: Exception) {
                 updateNotification("Error: ${e.message}")
@@ -174,7 +174,7 @@ class USSDProcessingService : Service() {
                 expectedFullName = null
                 expectedCNE = null
                 // Wait briefly on error to ensure system recovers
-                delay(2000)
+                delay(500)
             } finally {
                 // Always release the processing lock
                 isCurrentlyProcessing = false
@@ -182,7 +182,7 @@ class USSDProcessingService : Service() {
         }
     }
 
-    private suspend fun waitForCompletion(recordId: Long, maxWaitTime: Long = 45000) {
+    private suspend fun waitForCompletion(recordId: Long, maxWaitTime: Long = 30000) {
         val startTime = System.currentTimeMillis()
         
         while (System.currentTimeMillis() - startTime < maxWaitTime) {
@@ -198,11 +198,11 @@ class USSDProcessingService : Service() {
                 record?.status == RegistrationStatus.FAILED ||
                 record?.status == RegistrationStatus.CANCELLED) {
                 // Wait briefly to ensure USSD dialog is fully closed and response is received
-                delay(1000)
+                delay(200)
                 return
             }
             
-            delay(500)
+            delay(150)
         }
         
         // Timeout - mark as failed

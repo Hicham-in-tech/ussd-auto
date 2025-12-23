@@ -35,7 +35,7 @@ class USSDAccessibilityService : AccessibilityService() {
     private var lastDialogText = ""
     private var retryCount = 0
     private val MAX_RETRY = 5  // Increased retry count
-    private val ACTION_DELAY = 400L // Faster response
+    private val ACTION_DELAY = 100L // Maximum speed - minimal delay
     private val TAG = "USSDAccessibility"
     
     // Track input fill attempts to prevent infinite loops
@@ -189,7 +189,7 @@ class USSDAccessibilityService : AccessibilityService() {
                 // Fill name using async approach to prevent blocking
                 serviceScope.launch {
                     try {
-                        delay(300) // Small delay for dialog to stabilize
+                        delay(50) // Minimal delay for dialog to stabilize
                         
                         withContext(Dispatchers.Main) {
                             try {
@@ -229,7 +229,7 @@ class USSDAccessibilityService : AccessibilityService() {
                                     // Click Send/OK button after a brief delay
                                     handler.postDelayed({
                                         clickSendButtonSafely()
-                                    }, 500)
+                                    }, 100)
                                 } else {
                                     Log.e(TAG, "Failed to fill name field")
                                 }
@@ -263,7 +263,7 @@ class USSDAccessibilityService : AccessibilityService() {
                 // Fill CNE using async approach
                 serviceScope.launch {
                     try {
-                        delay(300)
+                        delay(50)
                         
                         withContext(Dispatchers.Main) {
                             try {
@@ -305,7 +305,7 @@ class USSDAccessibilityService : AccessibilityService() {
                                     // Click Send/OK button
                                     handler.postDelayed({
                                         clickSendButtonSafely()
-                                    }, 500)
+                                    }, 100)
                                 } else {
                                     Log.e(TAG, "Failed to fill CNE field")
                                 }
@@ -337,7 +337,7 @@ class USSDAccessibilityService : AccessibilityService() {
                 
                 serviceScope.launch {
                     try {
-                        delay(300)
+                        delay(50)
                         
                         withContext(Dispatchers.Main) {
                             try {
@@ -367,7 +367,7 @@ class USSDAccessibilityService : AccessibilityService() {
                                     
                                     handler.postDelayed({
                                         clickSendButtonSafely()
-                                    }, 500)
+                                    }, 100)
                                 }
                                 
                                 try { rootForFill.recycle() } catch (e: Exception) {}
@@ -414,7 +414,7 @@ class USSDAccessibilityService : AccessibilityService() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error dismissing dialog: ${e.message}")
                     }
-                }, 250)
+                }, 50)
             }
             
             // Check for completion/success messages - IMPROVED to handle final OK
@@ -460,12 +460,12 @@ class USSDAccessibilityService : AccessibilityService() {
                             // Reset state after dismissing
                             handler.postDelayed({
                                 resetState()
-                            }, 200)
+                            }, 50)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error dismissing final dialog: ${e.message}")
                             resetState()
                         }
-                    }, 250)
+                    }, 50)
                 }
             }
             
@@ -496,7 +496,7 @@ class USSDAccessibilityService : AccessibilityService() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error dismissing validation dialog: ${e.message}")
                     }
-                }, 150)
+                }, 30)
             }
             
             // Check for error messages
@@ -527,7 +527,7 @@ class USSDAccessibilityService : AccessibilityService() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error dismissing error dialog: ${e.message}")
                     }
-                }, 250)
+                }, 50)
             }
             
         } catch (e: Exception) {
@@ -780,7 +780,7 @@ class USSDAccessibilityService : AccessibilityService() {
                                                     try { root.recycle() } catch (e: Exception) {}
                                                 }
                                             } catch (e: Exception) {}
-                                        }, 150)
+                                        }, 30)
                                     }
                                 }, null)
                             }
@@ -869,7 +869,7 @@ class USSDAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "Clicking USSD button: '$nodeText' (desc: '$nodeDesc', id: '$viewId')")
                 val success = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 if (success) {
-                    Thread.sleep(100)
+                    Thread.sleep(20)
                     return true
                 }
             }
@@ -918,7 +918,7 @@ class USSDAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "Found USSD positive button: '$nodeText' (id: '$viewId')")
                 val success = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 if (success) {
-                    Thread.sleep(100)
+                    Thread.sleep(20)
                     return true
                 }
             }
@@ -999,10 +999,10 @@ class USSDAccessibilityService : AccessibilityService() {
                 node.className?.contains("edit") == true) {
                 // Click to focus
                 node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                Thread.sleep(50)
+                Thread.sleep(10)
                 // Then focus
                 node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-                Thread.sleep(50)
+                Thread.sleep(10)
                 Log.d(TAG, "Focused input field")
                 return true
             }
