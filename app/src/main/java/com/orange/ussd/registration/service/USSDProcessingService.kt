@@ -136,8 +136,8 @@ class USSDProcessingService : Service() {
                 
                 updateNotification("Processing: ${record.phoneNumber}")
                 
-                // Execute USSD code immediately
-                delay(500)
+                // Execute USSD code quickly
+                delay(200)
                 
                 // Execute USSD code
                 val ussdCode = buildUSSDCode(record.phoneNumber, record.pukLastFour)
@@ -163,8 +163,8 @@ class USSDProcessingService : Service() {
                 expectedFullName = null
                 expectedCNE = null
 
-                // Minimal delay - waitForCompletion already waits 1 second after OK is clicked
-                delay(500)
+                // Minimal delay before next number
+                delay(300)
 
             } catch (e: Exception) {
                 updateNotification("Error: ${e.message}")
@@ -200,15 +200,15 @@ class USSDProcessingService : Service() {
                 record?.status == RegistrationStatus.FAILED ||
                 record?.status == RegistrationStatus.CANCELLED) {
                 // Brief wait to ensure USSD dialog is fully closed
-                delay(300)
+                delay(200)
                 return
             }
             
             // If both name AND CNE are filled, consider it done after a short wait
             // This handles cases where success message is not detected
             if (record?.nameFilled == true && record.cneFilled == true) {
-                // Wait a bit for potential response dialog
-                delay(3000)
+                // Wait briefly for response dialog to be dismissed
+                delay(1500)
                 // Check status again
                 val updatedRecord = database.registrationDao().getRecordById(recordId)
                 if (updatedRecord?.status != RegistrationStatus.COMPLETED && 
@@ -221,7 +221,7 @@ class USSDProcessingService : Service() {
                         "Completed (name and CNE filled)"
                     )
                 }
-                delay(300)
+                delay(200)
                 return
             }
             
@@ -243,7 +243,7 @@ class USSDProcessingService : Service() {
                 statusUnchangedCount = 0
             }
             
-            delay(500)
+            delay(300)
         }
         
         // Timeout - check what we accomplished

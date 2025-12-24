@@ -35,7 +35,7 @@ class USSDAccessibilityService : AccessibilityService() {
     private var lastDialogText = ""
     private var retryCount = 0
     private val MAX_RETRY = 5  // Increased retry count
-    private val ACTION_DELAY = 400L // Faster response
+    private val ACTION_DELAY = 200L // Very fast response
     private val TAG = "USSDAccessibility"
     
     // Track input fill attempts to prevent infinite loops
@@ -199,7 +199,7 @@ class USSDAccessibilityService : AccessibilityService() {
                 // Fill name using async approach to prevent blocking
                 serviceScope.launch {
                     try {
-                        delay(300) // Small delay for dialog to stabilize
+                        delay(150) // Small delay for dialog to stabilize
                         
                         withContext(Dispatchers.Main) {
                             try {
@@ -239,7 +239,7 @@ class USSDAccessibilityService : AccessibilityService() {
                                     // Click Send/OK button after a brief delay
                                     handler.postDelayed({
                                         clickSendButtonSafely()
-                                    }, 500)
+                                    }, 250)
                                 } else {
                                     Log.e(TAG, "Failed to fill name field")
                                 }
@@ -273,7 +273,7 @@ class USSDAccessibilityService : AccessibilityService() {
                 // Fill CNE using async approach
                 serviceScope.launch {
                     try {
-                        delay(300)
+                        delay(150)
                         
                         withContext(Dispatchers.Main) {
                             try {
@@ -315,7 +315,7 @@ class USSDAccessibilityService : AccessibilityService() {
                                     // Click Send/OK button
                                     handler.postDelayed({
                                         clickSendButtonSafely()
-                                    }, 500)
+                                    }, 250)
                                 } else {
                                     Log.e(TAG, "Failed to fill CNE field")
                                 }
@@ -347,7 +347,7 @@ class USSDAccessibilityService : AccessibilityService() {
                 
                 serviceScope.launch {
                     try {
-                        delay(300)
+                        delay(150)
                         
                         withContext(Dispatchers.Main) {
                             try {
@@ -377,7 +377,7 @@ class USSDAccessibilityService : AccessibilityService() {
                                     
                                     handler.postDelayed({
                                         clickSendButtonSafely()
-                                    }, 500)
+                                    }, 250)
                                 }
                                 
                                 try { rootForFill.recycle() } catch (e: Exception) {}
@@ -424,7 +424,7 @@ class USSDAccessibilityService : AccessibilityService() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error dismissing dialog: ${e.message}")
                     }
-                }, 250)
+                }, 150)
             }
             
             // Check for completion/success messages - IMPROVED to handle final OK
@@ -470,12 +470,12 @@ class USSDAccessibilityService : AccessibilityService() {
                             // Reset state after dismissing
                             handler.postDelayed({
                                 resetState()
-                            }, 200)
+                            }, 100)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error dismissing final dialog: ${e.message}")
                             resetState()
                         }
-                    }, 250)
+                    }, 150)
                 }
             }
             
@@ -526,12 +526,12 @@ class USSDAccessibilityService : AccessibilityService() {
                         // Reset state after clicking to allow next number
                         handler.postDelayed({
                             resetState()
-                        }, 200)
+                        }, 100)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error dismissing validation dialog: ${e.message}")
                         resetState()
                     }
-                }, 150)
+                }, 100)
             }
             
             // Check for error messages
@@ -562,7 +562,7 @@ class USSDAccessibilityService : AccessibilityService() {
                     } catch (e: Exception) {
                         Log.e(TAG, "Error dismissing error dialog: ${e.message}")
                     }
-                }, 250)
+                }, 150)
             }
             
         } catch (e: Exception) {
