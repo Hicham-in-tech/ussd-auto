@@ -53,6 +53,9 @@ interface RegistrationDao {
     @Query("SELECT COUNT(*) FROM registration_records WHERE status = :status")
     suspend fun getCountByStatus(status: RegistrationStatus): Int
     
+    @Query("SELECT * FROM registration_records WHERE status = :status ORDER BY id ASC")
+    suspend fun getRecordsByStatusOnce(status: RegistrationStatus): List<RegistrationRecord>
+    
     @Query("DELETE FROM registration_records")
     suspend fun deleteAll()
     

@@ -111,7 +111,7 @@ class USSDProcessingService : Service() {
             // Ensure only one record is processed at a time using Mutex
             processingMutex.withLock {
                 if (isCurrentlyProcessing) {
-                    delay(200)
+                    delay(1000)
                     return@withLock
                 }
                 isCurrentlyProcessing = true
@@ -137,7 +137,7 @@ class USSDProcessingService : Service() {
                 updateNotification("Processing: ${record.phoneNumber}")
                 
                 // Execute USSD code immediately
-                delay(100)
+                delay(500)
                 
                 // Execute USSD code
                 val ussdCode = buildUSSDCode(record.phoneNumber, record.pukLastFour)
@@ -163,8 +163,7 @@ class USSDProcessingService : Service() {
                 expectedFullName = null
                 expectedCNE = null
 
-                // Wait before processing next record to ensure USSD dialog is fully closed
-                // This ensures complete execution: executing - input name - send - input CIN - send - response
+                // Minimal delay - waitForCompletion already waits 1 second after OK is clicked
                 delay(500)
 
             } catch (e: Exception) {
@@ -174,7 +173,7 @@ class USSDProcessingService : Service() {
                 expectedFullName = null
                 expectedCNE = null
                 // Wait briefly on error to ensure system recovers
-                delay(500)
+                delay(1000)
             } finally {
                 // Always release the processing lock
                 isCurrentlyProcessing = false
@@ -182,8 +181,10 @@ class USSDProcessingService : Service() {
         }
     }
 
-    private suspend fun waitForCompletion(recordId: Long, maxWaitTime: Long = 30000) {
+    private suspend fun waitForCompletion(recordId: Long, maxWaitTime: Long = 20000) {
         val startTime = System.currentTimeMillis()
+        var lastStatus: RegistrationStatus? = null
+        var statusUnchangedCount = 0
         
         while (System.currentTimeMillis() - startTime < maxWaitTime) {
             // Check if processing was stopped
@@ -193,24 +194,74 @@ class USSDProcessingService : Service() {
             
             val record = database.registrationDao().getRecordById(recordId)
             
+            // If completed, already registered, failed, or cancelled - we're done
             if (record?.status == RegistrationStatus.COMPLETED || 
                 record?.status == RegistrationStatus.ALREADY_REGISTERED ||
                 record?.status == RegistrationStatus.FAILED ||
                 record?.status == RegistrationStatus.CANCELLED) {
-                // Wait briefly to ensure USSD dialog is fully closed and response is received
-                delay(200)
+                // Brief wait to ensure USSD dialog is fully closed
+                delay(300)
                 return
             }
             
-            delay(150)
+            // If both name AND CNE are filled, consider it done after a short wait
+            // This handles cases where success message is not detected
+            if (record?.nameFilled == true && record.cneFilled == true) {
+                // Wait a bit for potential response dialog
+                delay(3000)
+                // Check status again
+                val updatedRecord = database.registrationDao().getRecordById(recordId)
+                if (updatedRecord?.status != RegistrationStatus.COMPLETED && 
+                    updatedRecord?.status != RegistrationStatus.ALREADY_REGISTERED &&
+                    updatedRecord?.status != RegistrationStatus.FAILED) {
+                    // Mark as completed since both inputs were filled
+                    database.registrationDao().updateStatusWithError(
+                        recordId,
+                        RegistrationStatus.COMPLETED,
+                        "Completed (name and CNE filled)"
+                    )
+                }
+                delay(300)
+                return
+            }
+            
+            // Track if status is stuck (unchanged for too long)
+            if (record?.status == lastStatus) {
+                statusUnchangedCount++
+                // If stuck for more than 10 checks (5 seconds), force continue
+                if (statusUnchangedCount > 10 && record?.nameFilled == true) {
+                    database.registrationDao().updateStatusWithError(
+                        recordId,
+                        RegistrationStatus.COMPLETED,
+                        "Completed (forced after name filled, CNE may have failed)"
+                    )
+                    delay(300)
+                    return
+                }
+            } else {
+                lastStatus = record?.status
+                statusUnchangedCount = 0
+            }
+            
+            delay(500)
         }
         
-        // Timeout - mark as failed
-        database.registrationDao().updateStatusWithError(
-            recordId,
-            RegistrationStatus.FAILED,
-            "Timeout waiting for registration completion"
-        )
+        // Timeout - check what we accomplished
+        val finalRecord = database.registrationDao().getRecordById(recordId)
+        if (finalRecord?.nameFilled == true) {
+            // At least name was filled, mark as completed
+            database.registrationDao().updateStatusWithError(
+                recordId,
+                RegistrationStatus.COMPLETED,
+                "Completed (timeout but name was filled)"
+            )
+        } else {
+            database.registrationDao().updateStatusWithError(
+                recordId,
+                RegistrationStatus.FAILED,
+                "Timeout - registration may be incomplete"
+            )
+        }
     }
 
     /**

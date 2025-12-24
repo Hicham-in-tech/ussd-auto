@@ -868,6 +868,86 @@ public final class RegistrationDao_Impl implements RegistrationDao {
   }
 
   @Override
+  public Object getRecordsByStatusOnce(final RegistrationStatus status,
+      final Continuation<? super List<RegistrationRecord>> $completion) {
+    final String _sql = "SELECT * FROM registration_records WHERE status = ? ORDER BY id ASC";
+    final RoomSQLiteQuery _statement = RoomSQLiteQuery.acquire(_sql, 1);
+    int _argIndex = 1;
+    final String _tmp = __converters.fromRegistrationStatus(status);
+    _statement.bindString(_argIndex, _tmp);
+    final CancellationSignal _cancellationSignal = DBUtil.createCancellationSignal();
+    return CoroutinesRoom.execute(__db, false, _cancellationSignal, new Callable<List<RegistrationRecord>>() {
+      @Override
+      @NonNull
+      public List<RegistrationRecord> call() throws Exception {
+        final Cursor _cursor = DBUtil.query(__db, _statement, false, null);
+        try {
+          final int _cursorIndexOfId = CursorUtil.getColumnIndexOrThrow(_cursor, "id");
+          final int _cursorIndexOfPhoneNumber = CursorUtil.getColumnIndexOrThrow(_cursor, "phoneNumber");
+          final int _cursorIndexOfPukLastFour = CursorUtil.getColumnIndexOrThrow(_cursor, "pukLastFour");
+          final int _cursorIndexOfFullName = CursorUtil.getColumnIndexOrThrow(_cursor, "fullName");
+          final int _cursorIndexOfCne = CursorUtil.getColumnIndexOrThrow(_cursor, "cne");
+          final int _cursorIndexOfStatus = CursorUtil.getColumnIndexOrThrow(_cursor, "status");
+          final int _cursorIndexOfErrorMessage = CursorUtil.getColumnIndexOrThrow(_cursor, "errorMessage");
+          final int _cursorIndexOfTimestamp = CursorUtil.getColumnIndexOrThrow(_cursor, "timestamp");
+          final int _cursorIndexOfUssdExecuted = CursorUtil.getColumnIndexOrThrow(_cursor, "ussdExecuted");
+          final int _cursorIndexOfNameFilled = CursorUtil.getColumnIndexOrThrow(_cursor, "nameFilled");
+          final int _cursorIndexOfCneFilled = CursorUtil.getColumnIndexOrThrow(_cursor, "cneFilled");
+          final int _cursorIndexOfCompleted = CursorUtil.getColumnIndexOrThrow(_cursor, "completed");
+          final List<RegistrationRecord> _result = new ArrayList<RegistrationRecord>(_cursor.getCount());
+          while (_cursor.moveToNext()) {
+            final RegistrationRecord _item;
+            final long _tmpId;
+            _tmpId = _cursor.getLong(_cursorIndexOfId);
+            final String _tmpPhoneNumber;
+            _tmpPhoneNumber = _cursor.getString(_cursorIndexOfPhoneNumber);
+            final String _tmpPukLastFour;
+            _tmpPukLastFour = _cursor.getString(_cursorIndexOfPukLastFour);
+            final String _tmpFullName;
+            _tmpFullName = _cursor.getString(_cursorIndexOfFullName);
+            final String _tmpCne;
+            _tmpCne = _cursor.getString(_cursorIndexOfCne);
+            final RegistrationStatus _tmpStatus;
+            final String _tmp_1;
+            _tmp_1 = _cursor.getString(_cursorIndexOfStatus);
+            _tmpStatus = __converters.toRegistrationStatus(_tmp_1);
+            final String _tmpErrorMessage;
+            if (_cursor.isNull(_cursorIndexOfErrorMessage)) {
+              _tmpErrorMessage = null;
+            } else {
+              _tmpErrorMessage = _cursor.getString(_cursorIndexOfErrorMessage);
+            }
+            final long _tmpTimestamp;
+            _tmpTimestamp = _cursor.getLong(_cursorIndexOfTimestamp);
+            final boolean _tmpUssdExecuted;
+            final int _tmp_2;
+            _tmp_2 = _cursor.getInt(_cursorIndexOfUssdExecuted);
+            _tmpUssdExecuted = _tmp_2 != 0;
+            final boolean _tmpNameFilled;
+            final int _tmp_3;
+            _tmp_3 = _cursor.getInt(_cursorIndexOfNameFilled);
+            _tmpNameFilled = _tmp_3 != 0;
+            final boolean _tmpCneFilled;
+            final int _tmp_4;
+            _tmp_4 = _cursor.getInt(_cursorIndexOfCneFilled);
+            _tmpCneFilled = _tmp_4 != 0;
+            final boolean _tmpCompleted;
+            final int _tmp_5;
+            _tmp_5 = _cursor.getInt(_cursorIndexOfCompleted);
+            _tmpCompleted = _tmp_5 != 0;
+            _item = new RegistrationRecord(_tmpId,_tmpPhoneNumber,_tmpPukLastFour,_tmpFullName,_tmpCne,_tmpStatus,_tmpErrorMessage,_tmpTimestamp,_tmpUssdExecuted,_tmpNameFilled,_tmpCneFilled,_tmpCompleted);
+            _result.add(_item);
+          }
+          return _result;
+        } finally {
+          _cursor.close();
+          _statement.release();
+        }
+      }
+    }, $completion);
+  }
+
+  @Override
   public Object getTotalCount(final Continuation<? super Integer> $completion) {
     final String _sql = "SELECT COUNT(*) FROM registration_records";
     final RoomSQLiteQuery _statement = RoomSQLiteQuery.acquire(_sql, 0);
