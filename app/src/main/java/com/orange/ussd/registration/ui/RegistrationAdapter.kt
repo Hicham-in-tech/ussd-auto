@@ -28,12 +28,11 @@ class RegistrationAdapter : ListAdapter<RegistrationRecord, RegistrationAdapter.
 
     class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val tvPhoneNumber: TextView = itemView.findViewById(R.id.tvPhoneNumber)
-        private val tvFullName: TextView = itemView.findViewById(R.id.tvFullName)
         private val tvStatus: TextView = itemView.findViewById(R.id.tvStatus)
+        private val tvResponseMessage: TextView = itemView.findViewById(R.id.tvResponseMessage)
 
         fun bind(record: RegistrationRecord) {
             tvPhoneNumber.text = record.phoneNumber
-            tvFullName.text = record.fullName
             
             // Simple status display
             when (record.status) {
@@ -65,6 +64,34 @@ class RegistrationAdapter : ListAdapter<RegistrationRecord, RegistrationAdapter.
                     tvStatus.text = "WAIT"
                     tvStatus.setTextColor(Color.parseColor("#9E9E9E"))
                 }
+            }
+            
+            // Display response message (hide timeout/blocked messages)
+            val responseMsg = record.errorMessage ?: ""
+            // Clean the message and extract only the meaningful part
+            val cleanMsg = when {
+                responseMsg.contains("Success:", ignoreCase = true) -> 
+                    responseMsg.substringAfter("Success:").trim()
+                responseMsg.contains("Completed:", ignoreCase = true) -> 
+                    responseMsg.substringAfter("Completed:").trim()
+                responseMsg.contains("Already registered:", ignoreCase = true) -> 
+                    responseMsg.substringAfter("Already registered:").trim()
+                responseMsg.contains("Error:", ignoreCase = true) -> 
+                    responseMsg.substringAfter("Error:").trim()
+                else -> responseMsg
+            }
+            
+            if (cleanMsg.isNotEmpty() && 
+                !cleanMsg.contains("timeout", ignoreCase = true) &&
+                !cleanMsg.contains("Timeout") &&
+                !cleanMsg.contains("blocked", ignoreCase = true) &&
+                !cleanMsg.contains("forced", ignoreCase = true) &&
+                !cleanMsg.contains("name and CNE", ignoreCase = true)) {
+                tvResponseMessage.text = cleanMsg
+                tvResponseMessage.visibility = View.VISIBLE
+            } else {
+                tvResponseMessage.text = "-"
+                tvResponseMessage.visibility = View.VISIBLE
             }
         }
     }
